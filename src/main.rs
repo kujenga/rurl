@@ -22,15 +22,16 @@ fn main() {
 
     let uri_str = matches.value_of("URL").unwrap();
 
-    let mut core = match Core::new() {
-        Ok(core) => core,
-        Err(err) => panic!("Whoops: {:?}", err),
-    };
+    match run(uri_str) {
+        Ok(_) => (),
+        Err(err) => panic!("Error: {:?}", err),
+    }
+}
+
+fn run(uri_str: &str) -> std::result::Result<(), Box<std::error::Error>> {
+    let mut core = Core::new()?;
     let client = Client::new(&core.handle());
-    let uri = match uri_str.parse() {
-        Ok(uri) => uri,
-        Err(err) => panic!("Whoops: {:?}", err),
-    };
+    let uri = uri_str.parse()?;
     let work = client.get(uri).and_then(|res| {
         println!("Response: {}", res.status());
 
@@ -38,5 +39,5 @@ fn main() {
             io::stdout().write_all(&chunk).map_err(From::from)
         })
     });
-    core.run(work).unwrap();
+    Ok(core.run(work)?)
 }
