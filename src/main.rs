@@ -1,5 +1,6 @@
 extern crate futures;
 extern crate hyper;
+extern crate hyper_tls;
 extern crate tokio_core;
 extern crate clap;
 
@@ -8,6 +9,7 @@ use std::str::FromStr;
 use std::io::{self, Write};
 use futures::{Future, Stream};
 use hyper::{Client, Request, Method};
+use hyper_tls::HttpsConnector;
 use tokio_core::reactor::Core;
 use clap::{Arg, App};
 
@@ -53,7 +55,11 @@ fn run(
     headers: std::option::Option<clap::Values>,
 ) -> std::result::Result<(), Box<std::error::Error>> {
     let mut core = Core::new()?;
-    let client = Client::new(&core.handle());
+    let handle = core.handle();
+    let client = Client::configure()
+        .connector(HttpsConnector::new(4, &handle)?)
+        .build(&handle);
+
 
     let uri = uri_str.parse()?;
     let method = Method::from_str(method).unwrap();
