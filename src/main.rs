@@ -1,19 +1,15 @@
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate tokio_core;
 extern crate clap;
+extern crate http;
+extern crate reqwest;
 
-use std::borrow::Cow;
+use clap::{App, Arg};
+use core::result::Result;
+use http::Method;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use std::str::FromStr;
-use std::io::{self, Write};
-use futures::{Future, Stream};
-use hyper::{Client, Request, Method};
-use hyper_tls::HttpsConnector;
-use tokio_core::reactor::Core;
-use clap::{Arg, App};
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new("rurl")
         .about("A simple alternative to curl, written in Rust.")
         .arg(
@@ -24,7 +20,7 @@ fn main() {
         )
         .arg(
             Arg::with_name("METHOD")
-                .short("X")
+                .short('X')
                 .long("method")
                 .help("HTTP Method")
                 .default_value("GET")
@@ -32,7 +28,7 @@ fn main() {
         )
         .arg(
             Arg::with_name("HEADER")
-                .short("H")
+                .short('H')
                 .help("header")
                 .multiple(true)
                 .takes_value(true),
@@ -41,60 +37,82 @@ fn main() {
 
     let uri_str = matches.value_of("URL").unwrap();
     let method = matches.value_of("METHOD").unwrap();
-    let headers = matches.values_of("HEADER");
+    let headers: Option<Vec<&str>> = match matches.get_many::<String>("HEADER") {
+        None => None,
+        Some(h) => Some(h.map(|s| s.as_str()).collect()),
+    };
 
-    match run(uri_str, method, headers) {
-        Ok(_) => (),
-        Err(err) => panic!("Error: {:?}", err),
-    }
+    run(uri_str, method, headers).await
 }
 
-fn run(
+async fn run(
     uri_str: &str,
     method: &str,
-    headers: std::option::Option<clap::Values>,
-) -> std::result::Result<(), Box<std::error::Error>> {
-    let mut core = Core::new()?;
-    let handle = core.handle();
-    let client = Client::configure()
-        .connector(HttpsConnector::new(4, &handle)?)
-        .build(&handle);
-
-
-    let uri = uri_str.parse()?;
+    header_inputs: Option<Vec<&str>>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let method = Method::from_str(method).unwrap();
-    let mut req = Request::new(method, uri);
-    for val in headers.unwrap_or_default() {
+    let mut headers = HeaderMap::new();
+    for val in header_inputs.unwrap_or_default() {
         let h = ArbitraryHeader::from_str(val)?;
-        req.headers_mut().set_raw(h.name, h.value);
+        headers.insert(h.name, h.value);
     }
 
-    let work = client.request(req).and_then(|res| {
-        println!("Response: {}", res.status());
-
-        res.body().for_each(|chunk| {
-            io::stdout().write_all(&chunk).map_err(From::from)
-        })
-    });
-
-    Ok(core.run(work)?)
+    let req = reqwest::Client::new()
+        .request(method, uri_str)
+        .headers(headers);
+    let resp = req.send().await?.text().await?;
+    println!("{}", resp);
+    Ok(())
 }
 
+// Provides an encapsulation of headers parsed out of curl-style CLI args.
 struct ArbitraryHeader {
-    name: Cow<'static, str>,
-    value: hyper::header::Raw,
+    name: HeaderName,
+    value: HeaderValue,
 }
 
 impl std::str::FromStr for ArbitraryHeader {
-    type Err = hyper::Error;
-    fn from_str(s: &str) -> hyper::Result<ArbitraryHeader> {
+    type Err = ArbitraryHeaderError;
+
+    fn from_str(s: &str) -> Result<ArbitraryHeader, ArbitraryHeaderError> {
         let idx = s.rfind(":").unwrap();
-        let name = &s[..idx];
-        let value = &s[idx + 1..];
+        let name_str = &s[..idx];
+        let value_str = &s[idx + 1..];
 
         Ok(ArbitraryHeader {
-            name: name.to_owned().into(),
-            value: value.to_owned().into(),
+            name: HeaderName::from_bytes(name_str.as_bytes())?,
+            value: HeaderValue::from_str(value_str)?,
         })
     }
 }
+
+// Provides an enumeration of possible error behaviors at parsing time when working to interpret
+// curl-style headers into values that are passed into the request builder.
+#[derive(Debug)]
+enum ArbitraryHeaderError {
+    Name(InvalidHeaderName),
+    Value(InvalidHeaderValue),
+}
+
+impl From<InvalidHeaderName> for ArbitraryHeaderError {
+    fn from(err: InvalidHeaderName) -> Self {
+        ArbitraryHeaderError::Name(err)
+    }
+}
+
+impl From<InvalidHeaderValue> for ArbitraryHeaderError {
+    fn from(err: InvalidHeaderValue) -> Self {
+        ArbitraryHeaderError::Value(err)
+    }
+}
+
+impl std::fmt::Display for ArbitraryHeaderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArbitraryHeaderError::Name(e) => write!(f, "{}", e),
+            ArbitraryHeaderError::Value(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for ArbitraryHeaderError {}

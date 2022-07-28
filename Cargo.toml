@@ -1,11 +1,11 @@
 [package]
 name = "rurl"
 version = "0.1.0"
-authors = ["kujenga <ataylor0123@gmail.com>"]
+authors = ["kujenga <git@ataylor.io>"]
+edition = "2021"
 
 [dependencies]
-clap = "2.27"
-futures = "0.1"
-hyper = "0.11"
-hyper-tls = "0.1"
-tokio-core = "0.1"
+clap = "3.2"
+reqwest = { version = "0.11", features = ["json"] }
+http = "0.2"
+tokio = { version = "1", features = ["full"] }
