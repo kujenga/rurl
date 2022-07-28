@@ -66,6 +66,7 @@ async fn run(
 }
 
 // Provides an encapsulation of headers parsed out of curl-style CLI args.
+#[derive(Debug, PartialEq)]
 struct ArbitraryHeader {
     name: HeaderName,
     value: HeaderValue,
@@ -76,8 +77,8 @@ impl std::str::FromStr for ArbitraryHeader {
 
     fn from_str(s: &str) -> Result<ArbitraryHeader, ArbitraryHeaderError> {
         let idx = s.rfind(":").unwrap();
-        let name_str = &s[..idx];
-        let value_str = &s[idx + 1..];
+        let name_str = &s[..idx].trim();
+        let value_str = &s[idx + 1..].trim();
 
         Ok(ArbitraryHeader {
             name: HeaderName::from_bytes(name_str.as_bytes())?,
@@ -116,3 +117,20 @@ impl std::fmt::Display for ArbitraryHeaderError {
 }
 
 impl std::error::Error for ArbitraryHeaderError {}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_basic_header_parse() {
+        assert_eq!(
+            ArbitraryHeader::from_str("test: value").unwrap(),
+            ArbitraryHeader {
+                name: HeaderName::from_static("test"),
+                value: HeaderValue::from_static("value"),
+            }
+        );
+    }
+}
