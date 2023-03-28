@@ -2,58 +2,44 @@ extern crate clap;
 extern crate http;
 extern crate reqwest;
 
-use clap::{App, Arg};
+use clap::Parser;
 use core::result::Result;
 use http::Method;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use std::str::FromStr;
 
+/// A simple alternative to curl, written in Rust.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// URL to make a request to
+    #[arg(index = 1, required = true)]
+    url: String,
+
+    /// HTTP Method
+    #[arg(short = 'X', long = "method")]
+    method: Method,
+
+    /// HTTP Header
+    #[arg(short = 'H', long = "header")]
+    header: Option<Vec<String>>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = App::new("rurl")
-        .about("A simple alternative to curl, written in Rust.")
-        .arg(
-            Arg::with_name("URL")
-                .help("URL to make a request to.")
-                .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::with_name("METHOD")
-                .short('X')
-                .long("method")
-                .help("HTTP Method")
-                .default_value("GET")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("HEADER")
-                .short('H')
-                .help("header")
-                .multiple(true)
-                .takes_value(true),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let uri_str = matches.value_of("URL").unwrap();
-    let method = matches.value_of("METHOD").unwrap();
-    let headers: Option<Vec<&str>> = match matches.get_many::<String>("HEADER") {
-        None => None,
-        Some(h) => Some(h.map(|s| s.as_str()).collect()),
-    };
-
-    run(uri_str, method, headers).await
+    run(args.url, args.method, args.header).await
 }
 
 async fn run(
-    uri_str: &str,
-    method: &str,
-    header_inputs: Option<Vec<&str>>,
+    uri_str: String,
+    method: Method,
+    header_inputs: Option<Vec<String>>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let method = Method::from_str(method).unwrap();
     let mut headers = HeaderMap::new();
     for val in header_inputs.unwrap_or_default() {
-        let h = ArbitraryHeader::from_str(val)?;
+        let h = ArbitraryHeader::from_str(&val)?;
         headers.insert(h.name, h.value);
     }
 
